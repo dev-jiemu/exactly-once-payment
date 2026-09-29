@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: exactly-once-payment
+
+  # PG 응답 대기(블로킹 I/O)를 가상 스레드로 처리
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payment
+    username: payment
+    password: payment
+
+  flyway:
+    enabled: true
+
+  kafka:
+    bootstrap-servers: localhost:19092
+    producer:
+      # 접수 버퍼 적재: 브로커 복제 완료 후 ack, 프로듀서 재시도로 인한 중복은 브로커가 제거
+      acks: all
+      properties:
+        enable.idempotence: true
+    consumer:
+      # offset은 DB 처리 후 직접 커밋 (at-least-once)
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      isolation-level: read_committed
+    listener:
+      ack-mode: manual
+
+payment:
+  topics:
+    requests: payment-requests
+    events: payment-events
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics
