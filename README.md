@@ -43,10 +43,11 @@ REQUESTED → PROCESSING ─┬─→ APPROVED ─→ CANCEL_REQUESTED → CANCE
 
 | 구분 | 선택 |
 |---|---|
-| 언어 / 프레임워크 | Java 21 (가상 스레드), Spring Boot |
-| 저장소 | PostgreSQL (결제·주문·재고·outbox·inbox, 멱등 키 원천) |
-| 메시지 브로커 | Redpanda (Kafka API 호환) |
-| 테스트 | JUnit 5, Testcontainers |
+| 언어 / 프레임워크 | Java 21 (가상 스레드), Spring Boot 4.1 |
+| 저장소 | PostgreSQL 18 (결제·주문·재고·outbox·inbox, 멱등 키 원천), Flyway |
+| 메시지 브로커 | Redpanda 26.1 (Kafka API 호환) |
+| 빌드 | Gradle 9.8 (Kotlin DSL), JDK 21 툴체인 |
+| 테스트 | JUnit 5, Testcontainers 2 |
 
 멱등성의 원천은 Redis가 아니라 **DB 유니크 제약 하나**로 둡니다. 멱등성 핵심 경로의 SQL(`ON CONFLICT`, CAS 업데이트)은 ORM 뒤에 숨기지 않고 드러나게 작성합니다.
 
@@ -54,7 +55,7 @@ REQUESTED → PROCESSING ─┬─→ APPROVED ─→ CANCEL_REQUESTED → CANCE
 ## 진행 상황
 
 - [x] README
-- [ ] 프로젝트 골격 (Gradle, docker-compose, DB 스키마, 패키지 구조)
+- [x] 프로젝트 골격 (Gradle, docker-compose, DB 스키마, 패키지 구조)
 - [ ] 클라이언트 재시도 멱등성
 - [ ] 외부 PG 호출 멱등성 (+ Sweeper)
 - [ ] 메시지 중복 소비 멱등성 (outbox / processed_events)

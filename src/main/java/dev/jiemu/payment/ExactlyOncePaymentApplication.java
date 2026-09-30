@@ -1,0 +1,12 @@
+package dev.jiemu.payment;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class ExactlyOncePaymentApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(ExactlyOncePaymentApplication.class, args);
+    }
+}
