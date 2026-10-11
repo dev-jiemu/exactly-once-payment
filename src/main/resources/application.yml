@@ -34,6 +34,15 @@ payment:
   topics:
     requests: payment-requests
     events: payment-events
+  pg:
+    # 같은 애플리케이션 안의 fakepg 컨트롤러를 루프백으로 호출한다(연습용 가짜 PG).
+    base-url: http://localhost:8080/fakepg
+    connect-timeout: 2s
+    read-timeout: 3s
+  sweeper:
+    unresolved-after: 20s
+    batch-size: 20
+    interval: 5s
 
 management:
   endpoints:

@@ -51,13 +51,22 @@ REQUESTED → PROCESSING ─┬─→ APPROVED ─→ CANCEL_REQUESTED → CANCE
 
 멱등성의 원천은 Redis가 아니라 **DB 유니크 제약 하나**로 둡니다. 멱등성 핵심 경로의 SQL(`ON CONFLICT`, CAS 업데이트)은 ORM 뒤에 숨기지 않고 드러나게 작성합니다.
 
+### 검토 메모: SQL 관리 방식 (jOOQ 전환 여부)
+
+`PaymentRepository` / `OrderRepository`가 `JdbcClient`로 SQL을 텍스트 블록에 직접 작성하는 방식이라 쿼리가 코드에 흩어지는 문제를 검토했습니다.
+
+- **지금은 유지.** 쿼리가 아직 3개뿐이라(`insertIfAbsent`, `findByMerchantAndIdempotencyKey`, `findById` 2종) jOOQ codegen 세팅 비용이 이득보다 큼.
+- **JPA/Hibernate는 비추천.** 멱등성 핵심인 `INSERT ... ON CONFLICT DO NOTHING RETURNING`은 Postgres 네이티브 문법이라 JPA 엔티티 생명주기(dirty checking)로 자연스럽게 표현되지 않고, 위에서 명시한 "SQL을 ORM 뒤에 숨기지 않는다" 원칙과도 맞지 않음.
+- **전환 시 1순위 후보는 jOOQ.** SQL을 문자열이 아니라 타입-세이프 DSL로 쓰면서도 `ON CONFLICT`/`RETURNING`을 그대로 지원해서 지금 원칙을 유지한 채 컴파일 타임 검증만 얻을 수 있음. Flyway로 스키마를 관리하고 있어 codegen 연동도 수월함.
+- **전환 재검토 시점:** 지금이 아니라 **외부 PG 호출 / 메시지 중복 소비(outbox, worker) 구현에 들어가는 시점.** `worker`도 동일한 `INSERT ... ON CONFLICT DO NOTHING` 패턴을 또 쓸 예정이라, 그 전에 한 번에 옮기는 게 두 번 일하지 않는 길.
+
 
 ## 진행 상황
 
 - [x] README
 - [x] 프로젝트 골격 (Gradle, docker-compose, DB 스키마, 패키지 구조)
 - [x] 클라이언트 재시도 멱등성
-- [ ] 외부 PG 호출 멱등성 (+ Sweeper)
+- [x] 외부 PG 호출 멱등성 (+ Sweeper)
 - [ ] 메시지 중복 소비 멱등성 (outbox / processed_events)
 - [ ] PG 웹훅 멱등성
 - [ ] 장애 시나리오 통합 테스트
