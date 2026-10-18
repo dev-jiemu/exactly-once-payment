@@ -5,9 +5,11 @@ import dev.jiemu.payment.api.PaymentRepository;
 import dev.jiemu.payment.domain.Payment;
 import dev.jiemu.payment.domain.PaymentStatus;
 import dev.jiemu.payment.fakepg.FakePgFault;
+import dev.jiemu.payment.fakepg.FakePgLedger;
 import dev.jiemu.payment.fakepg.FakePgScenario;
 import dev.jiemu.payment.fakepg.FakePgScenarioRegistry;
 import dev.jiemu.payment.sweeper.Sweeper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -55,6 +57,20 @@ class PgApprovalIntegrationTest {
 
     @Autowired
     private FakePgScenarioRegistry scenarios;
+
+    @Autowired
+    private FakePgLedger fakePgLedger;
+
+    /**
+     * 각 테스트 전에 FakePg 상태를 초기화한다.
+     * 특히 TIMEOUT_THEN_APPROVE 시나리오가 다음 테스트의 sweep에서 재발하지 않도록
+     * 시나리오 레지스트리와 원장을 매 테스트마다 깨끗한 상태로 시작한다.
+     */
+    @BeforeEach
+    void clearFakePgState() {
+        scenarios.clear();
+        fakePgLedger.clear();
+    }
 
     @Test
     void 같은_orderId로_두번_승인해도_PG측_거래는_하나이고_같은_tid다() {
@@ -112,6 +128,8 @@ class PgApprovalIntegrationTest {
         // PG 쪽에 미리 승인 기록을 심어둔다 — "타임아웃 났지만 사실 PG는 처리를 끝낸" 상황 그 자체를 재현.
         PgResult approved = pgClient.approve(orderId, 3_000L);
         Payment payment = seedUnknownPayment(orderId, "merchant-sweep-1", 3_000L);
+        // Docker 컨테이너와 호스트 간 clock skew로 인해 updated_at >= Instant.now()가 될 수 있으므로 명시적으로 과거로 backdating
+        backdateUpdatedAt(payment.paymentId(), Duration.ofSeconds(1));
 
         sweeper.sweep();
 
@@ -125,6 +143,7 @@ class PgApprovalIntegrationTest {
         String orderId = seedOrder("merchant-sweep-2", 4_000L);
         Payment payment = seedUnknownPayment(orderId, "merchant-sweep-2", 4_000L);
         // 이 orderId는 pgClient.approve가 아직 한 번도 성공한 적 없음(PG 원장에 기록 없음) → inquire는 NOT_FOUND를 반환해야 한다.
+        backdateUpdatedAt(payment.paymentId(), Duration.ofSeconds(1));
 
         sweeper.sweep();
 
@@ -147,6 +166,74 @@ class PgApprovalIntegrationTest {
 
         assertThat(firstClaim).anyMatch(p -> p.orderId().equals(orderId));
         assertThat(secondClaim).noneMatch(p -> p.orderId().equals(orderId));
+    }
+
+    @Test
+    void Sweeper는_PROCESSING_상태인_건도_PG_조회로_APPROVED로_확정한다() {
+        String orderId = seedOrder("merchant-sweep-proc", 5_000L);
+        // PG 쪽에 미리 승인 기록을 심어둔다 — "PROCESSING이지만 PG는 이미 승인 완료" 상황
+        PgResult approved = pgClient.approve(orderId, 5_000L);
+        Payment payment = seedProcessingPayment(orderId, "merchant-sweep-proc", 5_000L);
+        backdateUpdatedAt(payment.paymentId(), Duration.ofSeconds(1));
+
+        sweeper.sweep();
+
+        Payment updated = paymentRepository.findById(payment.paymentId()).orElseThrow();
+        assertThat(updated.status()).isEqualTo(PaymentStatus.APPROVED);
+        assertThat(updated.pgTid()).isEqualTo(approved.pgTid());
+    }
+
+    @Test
+    void CANCELED_PgResult로_resolve를_호출해도_PROCESSING_상태가_바뀌지_않는다() {
+        // PaymentApprovalService.resolve()의 CANCELED/NOT_FOUND 분기 — 코드상 no-op이지만 미검증 상태
+        String orderId = seedOrder("merchant-canceled", 6_000L);
+        Payment payment = seedProcessingPayment(orderId, "merchant-canceled", 6_000L);
+
+        paymentApprovalService.resolve(payment.paymentId(), new PgResult(PgStatus.CANCELED, null, null));
+
+        Payment updated = paymentRepository.findById(payment.paymentId()).orElseThrow();
+        assertThat(updated.status()).isEqualTo(PaymentStatus.PROCESSING);
+
+        // 테스트 격리: PROCESSING 상태가 이후 sweep에서 처리되지 않도록 FAILED로 전이한다
+        paymentRepository.transitionTo(payment.paymentId(), List.of(PaymentStatus.PROCESSING), PaymentStatus.FAILED, null, null);
+    }
+
+    @Test
+    void 이미_APPROVED된_결제에_resolve를_다시_호출해도_CAS_보호로_상태와_pgTid가_바뀌지_않는다() {
+        String orderId = seedOrder("merchant-cas", 8_000L);
+        Payment payment = seedProcessingPayment(orderId, "merchant-cas", 8_000L);
+
+        PgResult firstApproval = pgClient.approve(orderId, 8_000L);
+        paymentApprovalService.resolve(payment.paymentId(), firstApproval);
+
+        Payment afterFirst = paymentRepository.findById(payment.paymentId()).orElseThrow();
+        assertThat(afterFirst.status()).isEqualTo(PaymentStatus.APPROVED);
+
+        // 종결 상태(APPROVED)에서 resolve를 한 번 더 호출해도 상태 전이는 일어나지 않는다
+        paymentApprovalService.resolve(payment.paymentId(), firstApproval);
+
+        Payment afterSecond = paymentRepository.findById(payment.paymentId()).orElseThrow();
+        assertThat(afterSecond.status()).isEqualTo(PaymentStatus.APPROVED);
+        assertThat(afterSecond.pgTid()).isEqualTo(firstApproval.pgTid());
+    }
+
+    @Test
+    void claimUnresolvedBatch는_limit_이상의_행을_반환하지_않는다() {
+        int limit = 2;
+        // limit + 1개의 UNKNOWN 결제를 심고 모두 오래된 것처럼 backdating 한다
+        for (int i = 0; i < limit + 1; i++) {
+            String orderId = seedOrder("merchant-batch-lim-" + i, 1_000L);
+            Payment p = seedUnknownPayment(orderId, "merchant-batch-lim-" + i, 1_000L);
+            backdateUpdatedAt(p.paymentId(), Duration.ofMinutes(5));
+        }
+
+        List<Payment> claimed = paymentRepository.claimUnresolvedBatch(
+                Instant.now().minus(Duration.ofMinutes(1)), limit);
+
+        assertThat(claimed).hasSize(limit);
+
+        // 테스트 격리: batch-lim 결제를 FAILED로 처리해 이후 sweep에서 처리되지 않도록 정리한다
+        jdbcClient.sql("UPDATE payment SET status = 'FAILED' WHERE merchant_id LIKE 'merchant-batch-lim-%'").update();
     }
 
     private void backdateUpdatedAt(UUID paymentId, Duration age) {

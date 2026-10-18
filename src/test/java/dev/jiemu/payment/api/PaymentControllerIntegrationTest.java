@@ -252,6 +252,52 @@ class PaymentControllerIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void Idempotency_Key_헤더가_없으면_400을_반환한다() throws Exception {
+        String merchantId = "merchant-hdr";
+        String orderId = seedOrder(merchantId, 1_000L);
+
+        mockMvc.perform(post("/payments")
+                        .contentType("application/json")
+                        .content(requestBody(merchantId, orderId)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void 존재하지_않는_orderId로_결제_요청하면_404를_반환한다() throws Exception {
+        mockMvc.perform(post("/payments")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType("application/json")
+                        .content(requestBody("merchant-x", "order-nonexistent-" + UUID.randomUUID())))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void 다른_가맹점의_주문으로_결제_요청하면_404를_반환한다() throws Exception {
+        String orderId = seedOrder("merchant-owner", 2_000L);
+
+        mockMvc.perform(post("/payments")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType("application/json")
+                        .content(requestBody("merchant-impostor", orderId)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void merchantId가_blank이면_400을_반환한다() throws Exception {
+        mockMvc.perform(post("/payments")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType("application/json")
+                        .content("{\"merchantId\":\"\",\"orderId\":\"order-abc\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void 잘못된_UUID_형식으로_조회하면_400을_반환한다() throws Exception {
+        mockMvc.perform(get("/payments/not-a-uuid"))
+                .andExpect(status().isBadRequest());
+    }
+
     private String requestBody(String merchantId, String orderId) throws Exception {
         return objectMapper.writeValueAsString(new CreatePaymentRequest(merchantId, orderId));
     }
