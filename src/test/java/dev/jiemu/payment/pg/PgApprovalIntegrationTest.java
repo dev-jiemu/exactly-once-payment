@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.TestPropertySource;
 
 import java.time.Duration;
@@ -30,7 +31,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * PaymentApprovalService / Sweeper를 바로 호출해 검증한다.
  *
  * fakepg는 같은 애플리케이션 안에서 뜨는 루프백 HTTP 서버이므로 실제 포트 바인딩이 필요해
- * DEFINED_PORT로 띄운다 — 같은 포트를 쓰는 다른 테스트 컨텍스트와 섞이지 않도록 이 클래스 하나에 시나리오를 모은다.
+ * DEFINED_PORT로 띄운다 — 같은 포트를 쓰는 다른 DEFINED_PORT 테스트 컨텍스트(예: worker의
+ * PaymentRequestConsumerIntegrationTest)와 캐시가 겹쳐 떠 있으면 포트 충돌이 나므로,
+ * 이 클래스가 끝나면 컨텍스트를 확실히 닫도록 @DirtiesContext를 둔다.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT)
 @Import(TestcontainersConfiguration.class)
@@ -38,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         "payment.sweeper.unresolved-after=0s",
         "payment.sweeper.interval=1h"
 })
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PgApprovalIntegrationTest {
 
     @Autowired

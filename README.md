@@ -67,6 +67,6 @@ REQUESTED → PROCESSING ─┬─→ APPROVED ─→ CANCEL_REQUESTED → CANCE
 - [x] 프로젝트 골격 (Gradle, docker-compose, DB 스키마, 패키지 구조)
 - [x] 클라이언트 재시도 멱등성
 - [x] 외부 PG 호출 멱등성 (+ Sweeper)
-- [ ] 메시지 중복 소비 멱등성 (outbox / processed_events)
+- [x] 메시지 중복 소비 멱등성 (outbox / processed_events)
 - [ ] PG 웹훅 멱등성
 - [ ] 장애 시나리오 통합 테스트

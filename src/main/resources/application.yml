@@ -43,6 +43,12 @@ payment:
     unresolved-after: 20s
     batch-size: 20
     interval: 5s
+  outbox:
+    interval: 1s
+    batch-size: 50
+  worker:
+    # processed_events.consumer_group 값과 반드시 일치해야 한다.
+    consumer-group: payment-worker
 
 management:
   endpoints:

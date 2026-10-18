@@ -1,6 +1,7 @@
 package dev.jiemu.payment.api;
 
 import dev.jiemu.payment.TestcontainersConfiguration;
+import dev.jiemu.payment.outbox.OutboxRelay;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -13,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.redpanda.RedpandaContainer;
 import tools.jackson.databind.ObjectMapper;
@@ -35,6 +37,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
+// outbox relay의 백그라운드 폴링을 꺼서, 각 테스트가 직접 relay()를 호출해 발행 타이밍을 제어한다.
+@TestPropertySource(properties = { "payment.outbox.interval=1h" })
 class PaymentControllerIntegrationTest {
 
     @Autowired
@@ -48,6 +52,9 @@ class PaymentControllerIntegrationTest {
 
     @Autowired
     private RedpandaContainer redpandaContainer;
+
+    @Autowired
+    private OutboxRelay outboxRelay;
 
     @Value("${payment.topics.requests}")
     private String requestsTopic;
@@ -136,6 +143,7 @@ class PaymentControllerIntegrationTest {
                 .single();
         assertThat(count).isEqualTo(1);
 
+        outboxRelay.relay();
         List<ConsumerRecord<String, String>> records = consumeRequestsTopic(paymentId, 1);
         assertThat(records).hasSize(1);
         assertThat(records.get(0).value()).contains(orderId);
@@ -172,6 +180,7 @@ class PaymentControllerIntegrationTest {
                 .single();
         assertThat(count).isEqualTo(1);
 
+        outboxRelay.relay();
         assertThat(consumeRequestsTopic(firstPaymentId, 1)).hasSize(1);
     }
 
