@@ -65,6 +65,19 @@ public class PaymentRepository {
                 .optional();
     }
 
+    // order_id당 활성(비-FAILED) 결제는 uk_payment_active_order partial unique index로 최대 1건만 존재한다.
+    public Optional<Payment> findByOrderId(String orderId) {
+        return jdbcClient.sql("""
+                        SELECT payment_id, merchant_id, idempotency_key, request_hash, order_id, amount,
+                               status, pg_tid, fail_reason, created_at, updated_at
+                        FROM payment
+                        WHERE order_id = :orderId AND status <> 'FAILED'
+                        """)
+                .param("orderId", orderId)
+                .query(PaymentRepository::mapRow)
+                .optional();
+    }
+
     public Optional<Payment> findById(UUID paymentId) {
         return jdbcClient.sql("""
                         SELECT payment_id, merchant_id, idempotency_key, request_hash, order_id, amount,

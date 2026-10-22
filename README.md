@@ -68,5 +68,5 @@ REQUESTED → PROCESSING ─┬─→ APPROVED ─→ CANCEL_REQUESTED → CANCE
 - [x] 클라이언트 재시도 멱등성
 - [x] 외부 PG 호출 멱등성 (+ Sweeper)
 - [x] 메시지 중복 소비 멱등성 (outbox / processed_events)
-- [ ] PG 웹훅 멱등성
+- [x] PG 웹훅 멱등성
 - [ ] 장애 시나리오 통합 테스트

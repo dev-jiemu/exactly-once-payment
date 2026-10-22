@@ -49,6 +49,9 @@ payment:
   worker:
     # processed_events.consumer_group 값과 반드시 일치해야 한다.
     consumer-group: payment-worker
+  webhook:
+    # PG 웹훅 서명(HMAC-SHA256) 검증용 공유 비밀키
+    secret: dev-webhook-secret-change-me
 
 management:
   endpoints:
